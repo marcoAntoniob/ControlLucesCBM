@@ -1,0 +1,450 @@
+//Incluir las librerías para utilizar la pantalla
+#include <TouchScreen.h>
+#include <Adafruit_GFX.h>
+#include <UTFTGLUE.h>
+#include <stdint.h>
+#include <RTClib.h>   // incluye libreria para el manejo del modulo RTC
+#include <MCUFRIEND_kbv.h>   // Hardware-specific library
+#include <SoftwareSerial.h>	//libreria para bluetooth 
+
+
+#include <Fonts/FreeSans9pt7b.h>
+#include <Fonts/FreeSans12pt7b.h>
+#include <Fonts/FreeSerif12pt7b.h>
+
+RTC_DS3231 rtc;     // crea objeto del tipo RTC_DS3231
+
+UTFTGLUE myGLCD(0x9488, A2, A1, A3, A4, A0);
+SoftwareSerial miBT(10, 11); 	// pin 10 como RX, pin 11 como TX para bluetooth
+
+//Definir pines para controlar la pantalla
+#define YP A1  //A1 must be an analog pin, use "An" notation!
+#define XM A2  //A2 must be an analog pin, use "An" notation!
+#define YM 7   //7 can be a digital pin
+#define XP 6   //6 can be a digital pin
+
+// Definir los niveles de presión mínima y máxima
+#define MINPRESSURE 10
+#define MAXPRESSURE 1000
+unsigned long tiempo_1 = 0;
+unsigned long tiempo_2 = 0;
+unsigned long tiempo_3 = 0;
+unsigned long tiempo_4 = 0;
+#define INTERSEGUNDO 1000
+#define INTERMINUTO 60000
+#define INTERHORA 3600000
+#define INTERDIA 43200000
+//Definir los valores para calibrar la pantalla táctil
+#define X_STPT  191   //191 Valor de X inicial
+#define X_ENPT  1082    //1082 Valor de X final
+#define Y_STPT  145    //145 Valor de Y inicial
+#define Y_ENPT  880    //880 Valor de Y final
+
+TouchScreen myTouch = TouchScreen(XP, YP, XM, YM, 300);
+
+//Definir códigos de los colores más utilizados
+#define NEGRO   0x0000
+#define AZUL    0x001F
+#define ROJO     0xF800 
+#define VERDE   0x07E0
+#define CIAN    0x07FF
+#define MAGENTA 0xF81F
+#define AMARILLO  0xFFE0
+#define BLANCO   0xFFFF
+
+
+int led = 10; //Pin PWM donde va conectado el LED
+uint8_t BTN01,BTN02,BTN03,BTN1,BTN2,BTN3,BTN4,BTN5,BTN6,BTN7,BTN8,BTN_SENSOR,BTN_ALARMA,ACTIV,ALRMA,ESTADO_S1,ESTADO_S2,ACTIVADOR_SENSOR=1,ACTIVADOR_S1,ACTIVADOR_S2,ACTIVADOR_ALARMA; 
+const int F1 = 45,F2 = 46,F3 = 47,F4 = 48,F5 = 49,F6 = 50,F7 = 51,F8 = 52;   
+const int ALARMA=53; 
+const int SENSOR1 = 43,SENSOR2 = 44;
+
+
+//Variables para bluetooth
+char DATO=0;
+char DRECIB[4];
+String DATOF;
+uint8_t btrecib=0;
+uint8_t cont1=0;
+
+//Define el ancho y largo de la pantalla en pixeles
+int x_size = 480; int y_size = 320;
+bool settscrsize(int w, int h) {
+  if ((w <= 0) || (h <= 0)) return false;
+  x_size = w; y_size = h;
+  return true;
+}
+
+int x, y;  //Variables para obtener las coordenadas X y Y donde se presiona la pantalla
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//********************************************* Inicializacion ************************************************************
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void setup() {
+  Serial.begin(9600);
+  miBT.begin(38400);		// comunicacion serie entre Arduino y el modulo a 38400 bps
+  pinMode(F1, OUTPUT),pinMode(F2, OUTPUT),pinMode(F3, OUTPUT),pinMode(F4, OUTPUT),pinMode(F5, OUTPUT),pinMode(F6, OUTPUT),pinMode(F7, OUTPUT),pinMode(F8, OUTPUT);
+  pinMode(ALARMA, OUTPUT);
+  pinMode(SENSOR1,INPUT),pinMode(SENSOR2  ,INPUT);
+  digitalWrite(F1, HIGH),digitalWrite(F2, HIGH),digitalWrite(F3, HIGH),digitalWrite(F4, HIGH),digitalWrite(F5, HIGH),digitalWrite(F6, HIGH),digitalWrite(F7, HIGH),digitalWrite(F8, HIGH),digitalWrite(ALARMA, LOW);
+  //Inicializacion de la pantalla
+  myGLCD.InitLCD(1);  //Inicia en modo horizontal
+      configuracion_moduloreloj();
+        uint32_t when = millis();
+  myGLCD.clrScr();
+  myGLCD.fillScreen(NEGRO);
+  showmsgXY(50, 140, 0.8, &FreeSans12pt7b, "INTERRUPTORES INDIVIDUALES",CIAN);
+  PAG_INICIO();
+
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//********************************************* LOOP ************************************************************
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void loop() {
+
+DateTime fecha = rtc.now();
+
+  if(ACTIVADOR_SENSOR==1){
+    if(fecha.hour() >=18 || fecha.hour() <=6 || BTN_SENSOR == 1){
+      ESTADO_S1 = digitalRead(SENSOR1);
+      ESTADO_S2 = digitalRead(SENSOR2);
+      if(ESTADO_S1 == HIGH ){
+        ACTIVADOR_S1=1;
+        if(fecha.hour()>=23 || BTN_ALARMA == 1){
+          ACTIVADOR_ALARMA = 1;
+        } 
+      }
+      if(ESTADO_S2 == HIGH ){
+        ACTIVADOR_S2=1;
+        if(fecha.hour()>=23 || BTN_ALARMA == 1){
+          ACTIVADOR_ALARMA = 1;
+        } 
+      }
+    }
+  }
+
+  TSPoint p;
+  if (miBT.available()){
+    DATO=miBT.read();
+    DRECIB[cont1]=DATO;
+    cont1++;
+    if(cont1==4){
+      btrecib=1;
+      cont1=0;
+      DATOF = String(DATOF + DRECIB);
+    }
+  }
+
+  if (checktouch(&myTouch, &p) || btrecib == 1)
+  {
+    if (DATOF == "F2.2")
+      {
+        if(ALRMA==0){ALRMA=1;digitalWrite(ALARMA, HIGH);}else{ALRMA=0;digitalWrite(ALARMA, LOW);}
+      }
+    x = p.x; y = p.y;
+    //Serial.print("En x:");
+    //Serial.println(x);
+    //Serial.print("En y:");
+    //Serial.println(y); 
+    if(x >= 98 && x <= 133 || btrecib == 1){
+      myGLCD.setColor(CIAN);
+      if (x >= 98 && x <= 133 && y >= 257 && y <= 319 || DATOF == "F2.2")
+      {
+        if(BTN01==0){BTN01=1;BTN_ALARMA=1;myGLCD.fillRoundRect(20, 90, 135, 125);}
+        else{BTN01=0;BTN_ALARMA=0;digitalWrite(ALARMA, LOW);ALRMA=0;myGLCD.setColor(NEGRO);myGLCD.fillRoundRect(20, 90, 135, 125);
+        }
+      }
+      if (x >= 98 && x <= 133 && y >= 115 && y <= 232 || DATOF == "F2.1")
+      {
+        if(BTN02==0){BTN02=1;ACTIV=1;myGLCD.fillRoundRect(160, 90, 330, 125);}
+      }
+      if (x >= 98 && x <= 133 && y >= 16 && y <= 101 )
+      {
+        if(BTN03==0){BTN03=1;BTN_SENSOR=1; myGLCD.fillRoundRect(350, 90, 465, 125);}else{BTN03=0;BTN_SENSOR=0;myGLCD.setColor(NEGRO);myGLCD.fillRoundRect(350, 90, 465, 125);}     
+      }
+    }
+
+    if(x >= 204 && x <= 367 || ACTIV==1 || btrecib == 1 ){
+      myGLCD.setColor(ROJO);
+      //********************************************* Primera fila ***************************************************************************************
+      if (x >= 207 && x <= 274 && y >= 269 && y <= 319 || ACTIV==1 || DATOF == "F0.1")
+      {
+        if(BTN1==0){BTN1=1;digitalWrite(F1, LOW);myGLCD.fillRoundRect(20, 170, 120, 230);}else{BTN1=0;digitalWrite(F1, HIGH);myGLCD.setColor(NEGRO);myGLCD.fillRoundRect(20, 170, 120, 230);}
+      }
+      if (x >= 207 && x <= 274 && y >= 185 && y <= 255 || ACTIV==1 || DATOF == "F0.3")
+      {
+        if(BTN2==0){BTN2=1;digitalWrite(F2, LOW);myGLCD.fillRoundRect(20+115*1, 170, 120+115*1, 230);}else{BTN2=0;digitalWrite(F2, HIGH);myGLCD.setColor(NEGRO);myGLCD.fillRoundRect(20+115*1, 170, 120+115*1, 230);}
+      }
+      if (x >= 207 && x <= 274 && y >= 101 && y <= 175 || ACTIV==1 || DATOF == "F0.2")
+      {
+        if(BTN3==0){BTN3=1;digitalWrite(F3, LOW);myGLCD.fillRoundRect(20+115*2, 170, 120+115*2, 230);}else{BTN3=0;digitalWrite(F3, HIGH);myGLCD.setColor(NEGRO);myGLCD.fillRoundRect(20+115*2, 170, 120+115*2, 230);}     
+      }
+      if (x >= 207 && x <= 274 && y >= 15 && y <= 88 || ACTIV==1 || DATOF == "F0.4")
+      {
+        if(BTN4==0){BTN4=1;digitalWrite(F4, LOW);myGLCD.fillRoundRect(20+115*3, 170, 120+115*3, 230);}else{BTN4=0;digitalWrite(F4, HIGH);myGLCD.setColor(NEGRO);myGLCD.fillRoundRect(20+115*3, 170, 120+115*3, 230);}   
+      }
+      //********************************************* Segunda fila ***************************************************************************************
+      if (x >= 298 && x <= 365 && y >= 269 && y <= 319 || ACTIV==1 || DATOF == "F1.1")
+      {
+        if(BTN5==0){BTN5=1;digitalWrite(F5, LOW);myGLCD.fillRoundRect(20, 245, 120, 305);}else{BTN5=0;digitalWrite(F5, HIGH);myGLCD.setColor(NEGRO);myGLCD.fillRoundRect(20, 245, 120, 305);}
+      }
+      if (x >= 298 && x <= 365 && y >= 185 && y <= 255 || ACTIV==1 || DATOF == "F1.2")
+      {
+        if(BTN6==0){BTN6=1;digitalWrite(F6, LOW);myGLCD.fillRoundRect(20+115*1, 245, 120+115*1, 305);}else{BTN6=0;digitalWrite(F6, HIGH);myGLCD.setColor(NEGRO);myGLCD.fillRoundRect(20+115*1, 245, 120+115*1, 305);}
+      }
+      if (x >= 298 && x <= 365 && y >= 101 && y <= 175 || ACTIV==1 || DATOF == "F1.3")
+      {
+        if(BTN7==0){BTN7=1;digitalWrite(F7, LOW);myGLCD.fillRoundRect(20+115*2, 245, 120+115*2, 305);}else{BTN7=0;digitalWrite(F7, HIGH);myGLCD.setColor(NEGRO);myGLCD.fillRoundRect(20+115*2, 245, 120+115*2, 305);}     
+      }
+      if (x >= 298 && x <= 365 && y >= 15 && y <= 88 || ACTIV==1 || DATOF == "F1.4")
+      {
+        if(BTN8==0){BTN8=1;digitalWrite(F8, LOW);myGLCD.fillRoundRect(20+115*3, 245, 120+115*3, 305);}else{BTN8=0;digitalWrite(F8, HIGH);myGLCD.setColor(NEGRO);myGLCD.fillRoundRect(20+115*3, 245, 120+115*3, 305);}   
+      } 
+      ACTIV=0;
+      btrecib=0;
+      DATOF="";
+    }
+    if(BTN02==1){BTN02=0;myGLCD.setColor(NEGRO);myGLCD.fillRoundRect(160, 90, 330, 125);}
+    if(BTN1==0 & BTN2==0 & BTN3==0 & BTN4==0 & BTN5==0 & BTN6==0 & BTN7==0 & BTN8==0){
+      ACTIVADOR_SENSOR=1;
+    }else {
+      ACTIVADOR_SENSOR=0;
+    }
+    Serial.print(ACTIVADOR_SENSOR);
+    BTNS_LUCES(); 
+  }
+
+  if(millis() > tiempo_1 + INTERMINUTO){
+    tiempo_1 = millis();
+    MINUTOS();
+    if(fecha.minute()==0){
+      HORA();
+      if(fecha.hour()==0){
+      FECHA();
+      }
+    }
+  }
+
+  if(ACTIVADOR_S1==1){
+    digitalWrite(F1, LOW);
+    digitalWrite(F3, LOW);
+    if(millis() > tiempo_2 + INTERMINUTO*5){
+      tiempo_2 = millis();
+      ACTIVADOR_S1=0;
+      digitalWrite(F1, HIGH);      
+      digitalWrite(F3, HIGH);   
+    }
+  }
+  if(ACTIVADOR_S2==1){
+    digitalWrite(F1, LOW);
+    digitalWrite(F4, LOW);
+    digitalWrite(F3, LOW);
+    if(millis() > tiempo_3 + INTERMINUTO*5){
+      tiempo_3 = millis();
+      ACTIVADOR_S2=0;
+      digitalWrite(F1, HIGH);
+      digitalWrite(F4, HIGH);   
+      digitalWrite(F3, HIGH);      
+    }
+  }
+  if(ACTIVADOR_ALARMA==1){
+    digitalWrite(ALARMA, HIGH);
+    if(millis() > tiempo_4 + INTERSEGUNDO*40){
+      tiempo_4 = millis();
+      ACTIVADOR_ALARMA=0;
+      digitalWrite(ALARMA, LOW);      
+    }
+  }
+
+}
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//********************************************* Pantalla ************************************************************
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////SECCIÓN DE TIEMPO////////////////////////////////////////////////////
+void HORA() {
+  DateTime fecha = rtc.now();
+  String hora = String(fecha.hour());
+  String mensaje;
+  if (fecha.hour()<10){
+    mensaje="0"+hora;
+  }else mensaje= hora;
+  char charBuf[50];
+  mensaje.toCharArray(charBuf, 50);  
+  showmsgXY(5, 25, 6, &FreeSevenSegNumFont, "88",NEGRO);
+  showmsgXY(5, 25, 6, &FreeSevenSegNumFont, charBuf,BLANCO);
+  showmsgXY(62, 25, 7, NULL, ":",BLANCO);  
+}
+
+void MINUTOS() {
+  DateTime fecha = rtc.now();
+  String minuto = String(fecha.minute());
+  String mensaje;
+  if (fecha.minute()<10){
+    mensaje="0"+minuto;
+  }else mensaje= minuto;
+  char charBuf[50];
+  mensaje.toCharArray(charBuf, 50);
+  showmsgXY(90, 25, 2, &FreeSevenSegNumFont, "88",NEGRO);
+  showmsgXY(90, 25, 2, &FreeSevenSegNumFont, charBuf,BLANCO);
+}
+void FECHA() {
+  DateTime fecha = rtc.now();
+  String dia = String(fecha.day());
+  String mes = String(fecha.month());
+  String ano = String(fecha.year());
+  String mensaje,mensaje1;
+  if (fecha.day()<10){
+    mensaje="0"+dia;
+  }else mensaje= dia;
+  if (fecha.month()<10){
+    mensaje1="0"+mes;
+  }else mensaje1= mes;
+  mensaje=mensaje+"-"+mensaje1+"-"+ano;
+  char charBuf[50];
+  mensaje.toCharArray(charBuf, 50);
+  myGLCD.setColor(NEGRO);
+  myGLCD.fillRect(200,25,325,43);
+  showmsgXY(200, 26, 1, &FreeSans12pt7b, charBuf,BLANCO);
+  showmsgXY(190, 50, 0.8, &FreeSans12pt7b, "CARMAR V.1",ROJO);
+  
+}
+///////////////////////////////////////SECCIÓN DE BOTONES////////////////////////////////////////////////////
+
+void BTNS_LUCES() {
+   myGLCD.setColor(CIAN);
+   myGLCD.drawRoundRect(20, 90, 135, 125);
+   myGLCD.drawRoundRect(160, 90, 330, 125);
+   myGLCD.drawRoundRect(350, 90, 465, 125);
+   showmsgXY(365, 100, 1, &FreeSans9pt7b, "SENSORES",BLANCO);
+   showmsgXY(175, 100, 1, &FreeSans9pt7b, "PRENDER TODO",BLANCO);
+   showmsgXY(25, 100, 1, &FreeSans9pt7b, "SEGURIDAD",BLANCO);
+   myGLCD.setColor(ROJO);
+   for (int x = 20; x < 480; x = x +115){
+      for (int y = 170; y < 300; y = y +75){
+      //myGLCD.fillRoundRect(x, y, 100, 60, 20, myGLCD.color565(76, 0, 0));
+      myGLCD.drawRoundRect(x, y, x+100, y+60);
+      }
+   }   
+   for (int x = 38; x < 480; x = x +115){
+          showmsgXY(x, 195, 1, &FreeSans9pt7b, "TECHO",BLANCO);
+      } 
+   for (int x = 28; x < 480; x = x +115){
+    showmsgXY(x, 270, 1, &FreeSans9pt7b, "INTERIOR",BLANCO);
+      }
+   
+}
+
+
+///////////////////////////////////////SECCIÓN GENERAL////////////////////////////////////////////////////
+void PAG_INICIO() 
+{
+    HORA();
+    MINUTOS();
+    FECHA();
+    BTNS_LUCES(); 
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//********************************************* FUNCIONES ************************************************************
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void btnpres(int xact1, int yact1, int xact2, int yact2)
+{
+    myGLCD.setColor(NEGRO);
+    myGLCD.fillRoundRect(xact1, yact1, xact2, yact2);
+}
+void btnsuelto(int xact1, int yact1, int xact2, int yact2)
+{
+    myGLCD.setColor(NEGRO);
+    myGLCD.fillRoundRect(xact1, yact1, xact2, yact2);
+}
+
+void showmsgXY(int x, int y, int sz, const GFXfont *f, const char *msg, const char *color)
+{
+    int16_t x1, y1;
+    uint16_t wid, ht;
+    //myGLCD.drawFastHLine(0, y, myGLCD.width(), NEGRO);
+    myGLCD.setTextColor(color);
+    myGLCD.setFont(f);
+    myGLCD.setTextSize(sz);
+    myGLCD.print(msg,x,y);
+}
+
+void configuracion_moduloreloj(){
+
+ if (! rtc.begin()) {       // si falla la inicializacion del modulo
+ Serial.println("Modulo RTC no encontrado !");  // muestra mensaje de error
+ while (1);         // bucle infinito que detiene ejecucion del programa
+ }
+ //rtc.adjust(DateTime(2023,1,2,10,59,55));  
+ //rtc.adjust(DateTime(__DATE__, __TIME__));  // funcion que permite establecer fecha y horario
+            // al momento de la compilacion. Comentar esta linea
+          // y volver a subir para normal operacion
+
+}
+
+bool checktouch_core(TouchScreen *ts, TSPoint *pp, bool calflg) {
+  // variables
+  bool rlt = false;
+  int rtry = 10;
+
+  // Leer el sensor táctil de la pantalla
+  delay(1);
+  TSPoint p = ts->getPoint();
+  if ((p.z < MINPRESSURE) || (p.z > MAXPRESSURE)) goto rsmpt;
+  if (pp == 0) {
+    rlt = true;
+    goto rsmpt;
+  }
+
+  // Volver a leer el sensor táctil
+  if (p.x < (X_STPT + 100)) {
+    for (int i = 0 ; i < 2 ; i++) {
+      delay(1);
+      p = ts->getPoint();
+      if (p.x > (X_STPT + 100)) break;
+      if (p.x == 0) {
+        if (rtry > 0) {
+          rtry--;
+          i = 0;
+        }
+      }
+    }
+  }
+  if (p.x == 0) return false;
+
+  // Obtener las coordenadas X y Y en donde se toca la pantalla
+  if (pp != 0) {
+    #ifdef X_INVERSE
+        p.x = 1100 - p.x;
+    #endif
+        if (calflg) {
+          pp->x = p.x; pp->y = p.y;
+    } else {
+      pp->x = ((long)(p.x - X_STPT) * (long)x_size) / (long)(X_ENPT - X_STPT);
+      if (pp->x < 0) pp->x = 0;
+      pp->y = ((long)(p.y - Y_STPT) * (long)y_size) / (long)(Y_ENPT - Y_STPT);
+      if (pp->y < 0) pp->y = 0; if (pp->y >= y_size) pp->y = y_size - 1;
+    }
+    pp->z = p.z;
+  }
+  rlt = true;
+
+  // Restaurar los pines para volver a ser utilizados para la función táctil
+  rsmpt:
+    pinMode(XP, OUTPUT); pinMode(XM, OUTPUT);
+    pinMode(YP, OUTPUT); pinMode(YM, OUTPUT);
+
+  return rlt;
+}
+
+// Verificar el sensor touch para usarlo
+bool checktouch(TouchScreen *ts, TSPoint *pp) {
+  return checktouch_core(ts, pp, false);
+}
+
+
